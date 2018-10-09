@@ -4,6 +4,7 @@ import pickle
 import csv
 import pymorphy2
 import re
+import matplotlib.pyplot as plt
 import keras.utils
 from keras.preprocessing import sequence
 from keras.preprocessing.text import Tokenizer
@@ -11,6 +12,9 @@ from keras.models import Sequential
 from keras.layers.core import Dense, Dropout, Activation
 from keras.layers.embeddings import Embedding
 from keras.layers.recurrent import LSTM
+from sklearn.metrics import roc_curve
+from sklearn.metrics import auc
+
 
 ma = pymorphy2.MorphAnalyzer()
 
@@ -36,6 +40,15 @@ def load_data_from_arrays(strings, labels, train_test_split=0.9):
     y_test = labels[:test_size]
 
     return x_train, y_train, x_test, y_test
+
+def plot_roc(fpr, tpr, auc):
+    plt.plot([0, 1], [0, 1], 'k--')
+    plt.plot(fpr, tpr, label='Area = {:.3f})'.format(auc))
+    plt.xlabel('False positive rate')
+    plt.ylabel('True positive rate')
+    plt.title('ROC curve')
+    plt.legend(loc='best')
+    plt.show()
 
 
 data = pd.read_csv('train_data.csv', sep=';', header=None)
@@ -70,6 +83,7 @@ X_train = sequence.pad_sequences(X_train, maxlen=maxSequenceLength)
 X_test = sequence.pad_sequences(X_test, maxlen=maxSequenceLength)
 
 
+num_categories = 1
 # y_train = keras.utils.to_categorical(y_train, num_categories)
 # y_test = keras.utils.to_categorical(y_test, num_categories)
 # Если категорий больше двух, преобразуем столбец категорий в бинарную матрицу
@@ -100,8 +114,11 @@ epochs = 3
 
 model = Sequential()
 model.add(Embedding(vocab_size, maxSequenceLength))
-model.add(LSTM(32, dropout=0.2, recurrent_dropout=0.2))
-model.add(Dense(1, activation='sigmoid'))
+model.add(LSTM(64, return_sequences=True))
+model.add(LSTM(64))
+model.add(Dropout(0.5))
+model.add(Dense(1))
+model.add(Dense(num_categories, activation='sigmoid'))
 
 model.compile(loss='binary_crossentropy',
               optimizer='adam',
@@ -120,7 +137,20 @@ print()
 print(u'Оценка теста: {}'.format(score[0]))
 print(u'Оценка точности модели: {}'.format(score[1]))
 
-for i in range(len(X_test)):
-    prediction = model.predict(np.array([X_test[i]]))
-    print(data[1][i], y_test[i], prediction, '\n\n\n\n\n\n\n\n\n')
-# Выводим описание аккаунта, нашу оценку и оценку модели
+
+prediction = model.predict(X_test).ravel()
+
+d = {
+    'Description' : data[1][:len(X_test)],
+    'Original y' : y_test[:len(X_test)],
+    'Predicted y' : prediction[:len(X_test)]
+}
+
+df = pd.DataFrame(data=d)
+print(df.sort_values(by='Predicted y', ascending=False))
+
+
+fpr, tpr, thresholds = roc_curve(y_test, prediction)
+auc = auc(fpr, tpr)
+plot_roc(fpr, tpr, auc)
+# Считаем площадь под ROC-кривой и строим график
